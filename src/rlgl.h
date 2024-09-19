@@ -751,9 +751,9 @@ RLAPI bool rlFramebufferComplete(unsigned int id);                        // Ver
 RLAPI void rlUnloadFramebuffer(unsigned int id);                          // Delete framebuffer from GPU
 
 // Shaders management
-RLAPI unsigned int rlLoadShaderCode(const char *vsCode, const char *fsCode);    // Load shader from code strings
+RLAPI unsigned int rlLoadShaderCode(const char *vsCode, const char *fsCode, const char* gsCode);    // Load shader from code strings
 RLAPI unsigned int rlCompileShader(const char *shaderCode, int type);           // Compile custom shader and return shader id (type: RL_VERTEX_SHADER, RL_FRAGMENT_SHADER, RL_COMPUTE_SHADER)
-RLAPI unsigned int rlLoadShaderProgram(unsigned int vShaderId, unsigned int fShaderId); // Load custom shader program
+RLAPI unsigned int rlLoadShaderProgram(unsigned int vShaderId, unsigned int fShaderId, unsigned int gShaderId); // Load custom shader program
 RLAPI void rlUnloadShaderProgram(unsigned int id);                              // Unload shader program
 RLAPI int rlGetLocationUniform(unsigned int shaderId, const char *uniformName); // Get shader location uniform
 RLAPI int rlGetLocationAttrib(unsigned int shaderId, const char *attribName);   // Get shader location attribute
@@ -761,6 +761,7 @@ RLAPI void rlSetUniform(int locIndex, const void *value, int uniformType, int co
 RLAPI void rlSetUniformMatrix(int locIndex, Matrix mat);                        // Set shader value matrix
 RLAPI void rlSetUniformSampler(int locIndex, unsigned int textureId);           // Set shader value sampler
 RLAPI void rlSetShader(unsigned int id, int *locs);                             // Set shader currently active (id and locations)
+RLAPI void rlDebugShowShaderUniforms(unsigned int id);
 
 // Compute shader management
 RLAPI unsigned int rlLoadComputeShaderProgram(unsigned int shaderId);           // Load compute shader program
@@ -3985,13 +3986,16 @@ void rlUnloadVertexBuffer(unsigned int vboId)
     glDeleteBuffers(1, &vboId);
     //TRACELOG(RL_LOG_INFO, "VBO: Unloaded vertex data from VRAM (GPU)");
 #endif
+
 }
+
+
 
 // Shaders management
 //-----------------------------------------------------------------------------------------------
 // Load shader from code strings
 // NOTE: If shader string is NULL, using default vertex/fragment shaders
-unsigned int rlLoadShaderCode(const char *vsCode, const char *fsCode)
+unsigned int rlLoadShaderCode(const char *vsCode, const char *fsCode, const char *gsCode)
 {
     unsigned int id = 0;
 
@@ -4009,12 +4013,16 @@ unsigned int rlLoadShaderCode(const char *vsCode, const char *fsCode)
     if (fsCode != NULL) fragmentShaderId = rlCompileShader(fsCode, GL_FRAGMENT_SHADER);
     else fragmentShaderId = RLGL.State.defaultFShaderId;
 
+    // Compile geometry shader (if provided)
+    unsigned int geometryShaderId = 0;
+    if (gsCode != NULL) geometryShaderId = rlCompileShader(gsCode, GL_GEOMETRY_SHADER);
+
     // In case vertex and fragment shader are the default ones, no need to recompile, we can just assign the default shader program id
-    if ((vertexShaderId == RLGL.State.defaultVShaderId) && (fragmentShaderId == RLGL.State.defaultFShaderId)) id = RLGL.State.defaultShaderId;
+    if ((vertexShaderId == RLGL.State.defaultVShaderId) && (fragmentShaderId == RLGL.State.defaultFShaderId) && geometryShaderId == 0) id = RLGL.State.defaultShaderId;
     else if ((vertexShaderId > 0) && (fragmentShaderId > 0))
     {
         // One of or both shader are new, we need to compile a new shader program
-        id = rlLoadShaderProgram(vertexShaderId, fragmentShaderId);
+        id = rlLoadShaderProgram(vertexShaderId, fragmentShaderId, geometryShaderId);
 
         // We can detach and delete vertex/fragment shaders (if not default ones)
         // NOTE: We detach shader before deletion to make sure memory is freed
@@ -4067,6 +4075,31 @@ unsigned int rlLoadShaderCode(const char *vsCode, const char *fsCode)
     return id;
 }
 
+void rlDebugShowShaderUniforms(unsigned int id)
+{
+    #if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+	// Get available shader uniforms
+	// NOTE: This information is useful for debug...
+	int uniformCount = -1;
+	glGetProgramiv(id, GL_ACTIVE_UNIFORMS, &uniformCount);
+
+	for (int i = 0; i < uniformCount; i++)
+	{
+		int namelen = -1;
+		int num = -1;
+		char name[256] = { 0 };     // Assume no variable names longer than 256
+		GLenum type = GL_ZERO;
+
+		// Get the name of the uniforms
+		glGetActiveUniform(id, i, sizeof(name) - 1, &namelen, &num, &type, name);
+
+		name[namelen] = 0;
+		TRACELOG(RL_LOG_INFO, "SHADER: [ID %i] Active uniform (%s) set at location: %i", id, name, glGetUniformLocation(id, name));
+	}
+    #endif
+}
+
+
 // Compile custom shader and return shader id
 unsigned int rlCompileShader(const char *shaderCode, int type)
 {
@@ -4086,7 +4119,7 @@ unsigned int rlCompileShader(const char *shaderCode, int type)
         {
             case GL_VERTEX_SHADER: TRACELOG(RL_LOG_WARNING, "SHADER: [ID %i] Failed to compile vertex shader code", shader); break;
             case GL_FRAGMENT_SHADER: TRACELOG(RL_LOG_WARNING, "SHADER: [ID %i] Failed to compile fragment shader code", shader); break;
-            //case GL_GEOMETRY_SHADER:
+            case GL_GEOMETRY_SHADER: TRACELOG(RL_LOG_WARNING, "SHADER: [ID %i] Failed to compile geometry shader code", shader); break;
         #if defined(GRAPHICS_API_OPENGL_43)
             case GL_COMPUTE_SHADER: TRACELOG(RL_LOG_WARNING, "SHADER: [ID %i] Failed to compile compute shader code", shader); break;
         #elif defined(GRAPHICS_API_OPENGL_33)
@@ -4115,7 +4148,7 @@ unsigned int rlCompileShader(const char *shaderCode, int type)
         {
             case GL_VERTEX_SHADER: TRACELOG(RL_LOG_INFO, "SHADER: [ID %i] Vertex shader compiled successfully", shader); break;
             case GL_FRAGMENT_SHADER: TRACELOG(RL_LOG_INFO, "SHADER: [ID %i] Fragment shader compiled successfully", shader); break;
-            //case GL_GEOMETRY_SHADER:
+            case GL_GEOMETRY_SHADER: TRACELOG(RL_LOG_INFO, "SHADER: [ID %i] Geometry shader compiled successfully", shader); break;
         #if defined(GRAPHICS_API_OPENGL_43)
             case GL_COMPUTE_SHADER: TRACELOG(RL_LOG_INFO, "SHADER: [ID %i] Compute shader compiled successfully", shader); break;
         #elif defined(GRAPHICS_API_OPENGL_33)
@@ -4130,7 +4163,7 @@ unsigned int rlCompileShader(const char *shaderCode, int type)
 }
 
 // Load custom shader strings and return program id
-unsigned int rlLoadShaderProgram(unsigned int vShaderId, unsigned int fShaderId)
+unsigned int rlLoadShaderProgram(unsigned int vShaderId, unsigned int fShaderId, unsigned int gShaderId)
 {
     unsigned int program = 0;
 
@@ -4140,6 +4173,7 @@ unsigned int rlLoadShaderProgram(unsigned int vShaderId, unsigned int fShaderId)
 
     glAttachShader(program, vShaderId);
     glAttachShader(program, fShaderId);
+    if (gShaderId > 0) glAttachShader(program, gShaderId);
 
     // NOTE: Default attribute shader locations must be Bound before linking
     glBindAttribLocation(program, RL_DEFAULT_SHADER_ATTRIB_LOCATION_POSITION, RL_DEFAULT_SHADER_ATTRIB_NAME_POSITION);
@@ -4871,7 +4905,7 @@ static void rlLoadShaderDefault(void)
     RLGL.State.defaultVShaderId = rlCompileShader(defaultVShaderCode, GL_VERTEX_SHADER);     // Compile default vertex shader
     RLGL.State.defaultFShaderId = rlCompileShader(defaultFShaderCode, GL_FRAGMENT_SHADER);   // Compile default fragment shader
 
-    RLGL.State.defaultShaderId = rlLoadShaderProgram(RLGL.State.defaultVShaderId, RLGL.State.defaultFShaderId);
+    RLGL.State.defaultShaderId = rlLoadShaderProgram(RLGL.State.defaultVShaderId, RLGL.State.defaultFShaderId, 0);
 
     if (RLGL.State.defaultShaderId > 0)
     {
