@@ -995,7 +995,7 @@ void EndMode2D(void)
 
     if (rlGetActiveFramebuffer() == 0) rlMultMatrixf(MatrixToFloat(CORE.Window.screenScale)); // Apply screen scaling if required
 }
-
+ // 
 // Initializes 3D mode with custom camera (3D)
 void BeginMode3D(Camera camera)
 {
@@ -1335,7 +1335,7 @@ Shader LoadShaderFromMemory(const char *vsCode, const char *fsCode)
 
     return shader;
 }
-
+//
 Shader LoadShaderWithGeometryFromMemory(const char* vsCode, const char* fsCode, const char *gsCode)
 {
     Shader shader = { 0 };
