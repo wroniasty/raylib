@@ -771,6 +771,7 @@ typedef enum {
     SHADER_LOC_VERTEX_NORMAL,       // Shader location: vertex attribute: normal
     SHADER_LOC_VERTEX_TANGENT,      // Shader location: vertex attribute: tangent
     SHADER_LOC_VERTEX_COLOR,        // Shader location: vertex attribute: color
+    SHADER_LOC_VERTEX_DATA,         // Custom: 
     SHADER_LOC_MATRIX_MVP,          // Shader location: matrix uniform: model-view-projection
     SHADER_LOC_MATRIX_VIEW,         // Shader location: matrix uniform: view (camera transform)
     SHADER_LOC_MATRIX_PROJECTION,   // Shader location: matrix uniform: projection
